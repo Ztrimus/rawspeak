@@ -75,7 +75,7 @@ app = BUNDLE(
     bundle_identifier="com.rawspeak.app",
     icon=APP_ICON,
     info_plist={
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleShortVersionString": "0.1.1",
         "CFBundleName": "RawSpeak",
         "CFBundleDisplayName": "RawSpeak",
         "NSMicrophoneUsageDescription": "RawSpeak needs microphone access to record your voice for transcription.",
