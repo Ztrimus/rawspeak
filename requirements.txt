@@ -1,0 +1,10 @@
+pynput>=1.7
+sounddevice>=0.4
+numpy>=1.24
+transformers>=4.35
+torch>=2.0
+pyperclip>=1.8
+pyautogui>=0.9
+pystray>=0.19
+Pillow>=9.0
+tomli>=2.0; python_version < "3.11"

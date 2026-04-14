@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rawspeak"
+version = "0.1.0"
+description = "Local voice-to-text desktop tool — privacy-first Whisper + LLM dictation"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "rawspeak contributors" }]
+keywords = ["voice", "speech", "transcription", "whisper", "dictation", "privacy"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Utilities",
+]
+dependencies = [
+    # Global hotkey detection
+    "pynput>=1.7",
+    # Microphone capture
+    "sounddevice>=0.4",
+    "numpy>=1.24",
+    # Local Whisper transcription
+    "transformers>=4.35",
+    "torch>=2.0",
+    # Clipboard + auto-paste
+    "pyperclip>=1.8",
+    "pyautogui>=0.9",
+    # System tray icon
+    "pystray>=0.19",
+    "Pillow>=9.0",
+    # TOML config parsing (stdlib in Python 3.11+)
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-mock>=3.10",
+]
+
+[project.scripts]
+rawspeak = "rawspeak.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rawspeak*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
