@@ -1,0 +1,95 @@
+name: Build & Release macOS DMG
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest
+
+  build-and-release:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(python -c "from rawspeak import __version__; print(__version__)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build .app with PyInstaller
+        if: steps.check.outputs.exists == 'false'
+        run: pyinstaller rawspeak.spec --noconfirm
+
+      - name: Install create-dmg
+        if: steps.check.outputs.exists == 'false'
+        run: brew install create-dmg
+
+      - name: Build DMG
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist/dmg
+          cp -R dist/RawSpeak.app dist/dmg/
+          create-dmg \
+            --volname "RawSpeak" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "RawSpeak.app" 200 190 \
+            --hide-extension "RawSpeak.app" \
+            --app-drop-link 600 185 \
+            "dist/RawSpeak-${VERSION}.dmg" \
+            "dist/dmg/" \
+            || true
+          ls -lh dist/*.dmg
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG=$(ls dist/*.dmg | head -1)
+          gh release create "$TAG" "$DMG" \
+            --title "RawSpeak $VERSION" \
+            --generate-notes

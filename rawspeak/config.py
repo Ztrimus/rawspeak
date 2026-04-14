@@ -27,12 +27,15 @@ DEFAULT_CONFIG_TOML = """\
 # rawspeak configuration
 # Edit this file to customise rawspeak behaviour.
 
-# Global hotkey to toggle recording.
+# Global hotkey to toggle recording (pynput format).
 # Examples: "<ctrl>+<alt>+<space>", "<ctrl>+<shift>+r"
+# Function keys work well as single-key triggers: "<f5>", "<f6>", etc.
+# Note: Fn+<key> is not a distinct event on macOS — use a function key directly.
 hotkey = "<ctrl>+<alt>+<space>"
 
 # Optional mouse button that also toggles recording.
 # Values: "middle" (scroll-wheel click), "x1", "x2", or "" to disable.
+# "middle" = clicking the scroll wheel, which works as a convenient toggle.
 mouse_button = "middle"
 
 # Audio capture settings.
