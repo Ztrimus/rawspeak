@@ -8,6 +8,7 @@ cd "$ROOT_DIR"
 VERSION=$(python -c "from rawspeak import __version__; print(__version__)")
 APP_NAME="RawSpeak"
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+DMG_ICON="assets/RawSpeak.icns"
 
 echo "==> Building ${APP_NAME} v${VERSION}"
 
@@ -24,6 +25,7 @@ test -f "dist/${DMG_NAME}" && rm "dist/${DMG_NAME}"
 
 create-dmg \
   --volname "${APP_NAME}" \
+  --volicon "${DMG_ICON}" \
   --window-pos 200 120 \
   --window-size 800 400 \
   --icon-size 100 \
