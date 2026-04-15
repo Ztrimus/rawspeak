@@ -168,8 +168,17 @@ class RawSpeak:
             # AppKit requires tray setup on the main thread on macOS.
             try:
                 self.tray.run_blocking()
+                # If run_blocking returns, the tray backend likely failed to start.
+                # Keep the process alive so global hotkeys still work.
+                logger.warning(
+                    "Tray loop exited. Running without tray; hotkeys remain active."
+                )
+                self._stop_event.wait()
             except KeyboardInterrupt:
                 self._quit()
+            except Exception:
+                logger.exception("Tray failed to start on macOS; running without tray")
+                self._stop_event.wait()
         else:
             self.tray.start()
             try:

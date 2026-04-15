@@ -80,6 +80,8 @@ app = BUNDLE(
         "CFBundleDisplayName": "RawSpeak",
         "NSMicrophoneUsageDescription": "RawSpeak needs microphone access to record your voice for transcription.",
         "NSAppleEventsUsageDescription": "RawSpeak needs accessibility access to paste transcribed text.",
-        "LSUIElement": True,
+        # Keep a Dock icon visible so the app does not appear to "not launch"
+        # if the tray backend fails on a user's macOS setup.
+        "LSUIElement": False,
     },
 )
