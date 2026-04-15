@@ -69,6 +69,25 @@ rawspeak
 
 A tray icon appears. Press **Ctrl + Alt + Space** to toggle recording.
 
+### 5. macOS first launch (Gatekeeper + permissions)
+
+If you install the DMG build, macOS may show:
+"Apple could not verify 'RawSpeak' is free of malware..."
+
+This is expected for unsigned/not-notarized MVP builds.
+
+1. Drag `RawSpeak.app` to `Applications`.
+2. In Finder, open `Applications`, right-click `RawSpeak`, then click `Open`.
+3. If still blocked, go to `System Settings -> Privacy & Security` and click `Open Anyway` for RawSpeak.
+
+After launch, grant required permissions:
+
+- `System Settings -> Privacy & Security -> Microphone` -> enable `RawSpeak`
+- `System Settings -> Privacy & Security -> Accessibility` -> enable `RawSpeak`
+- `System Settings -> Privacy & Security -> Input Monitoring` -> enable `RawSpeak`
+
+Without these permissions, hotkeys, recording, or paste automation may fail.
+
 ---
 
 ## Configuration
