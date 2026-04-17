@@ -75,13 +75,11 @@ app = BUNDLE(
     bundle_identifier="com.rawspeak.app",
     icon=APP_ICON,
     info_plist={
-        "CFBundleShortVersionString": "0.1.3",
+        "CFBundleShortVersionString": "0.1.4",
         "CFBundleName": "RawSpeak",
         "CFBundleDisplayName": "RawSpeak",
         "NSMicrophoneUsageDescription": "RawSpeak needs microphone access to record your voice for transcription.",
         "NSAppleEventsUsageDescription": "RawSpeak needs accessibility access to paste transcribed text.",
-        # Keep a Dock icon visible so the app does not appear to "not launch"
-        # if the tray backend fails on a user's macOS setup.
-        "LSUIElement": False,
+        "LSUIElement": True,
     },
 )
