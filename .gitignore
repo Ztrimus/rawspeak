@@ -5,3 +5,4 @@ __pycache__/
 .env.local
 rawspeak.egg-info/
 assets/*.iconset/
+electron/node_modules/
