@@ -6,3 +6,5 @@ __pycache__/
 rawspeak.egg-info/
 assets/*.iconset/
 electron/node_modules/
+build/
+dist/

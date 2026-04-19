@@ -7,9 +7,19 @@ from pathlib import Path
 block_cipher = None
 
 APP_ICON = "assets/RawSpeak.icns"
+APP_VERSION = "0.0.0"
+
+try:
+    ns = {}
+    init_path = Path(__file__).resolve().parent / "rawspeak" / "__init__.py"
+    exec(init_path.read_text(encoding="utf-8"), ns)
+    APP_VERSION = str(ns.get("__version__", APP_VERSION))
+except Exception:
+    # Keep build resilient; release CI reads version independently.
+    pass
 
 a = Analysis(
-    ["rawspeak/main.py"],
+    ["app_entry.py"],
     pathex=["."],
     binaries=[],
     datas=[],
@@ -35,7 +45,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "IPython", "notebook", "scipy"],
+    excludes=["matplotlib", "IPython", "notebook", "scipy"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -75,7 +85,7 @@ app = BUNDLE(
     bundle_identifier="com.rawspeak.app",
     icon=APP_ICON,
     info_plist={
-        "CFBundleShortVersionString": "0.1.5",
+        "CFBundleShortVersionString": APP_VERSION,
         "CFBundleName": "RawSpeak",
         "CFBundleDisplayName": "RawSpeak",
         "NSMicrophoneUsageDescription": "RawSpeak needs microphone access to record your voice for transcription.",
