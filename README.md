@@ -170,6 +170,21 @@ pip install -e ".[dev]"
 pytest
 ```
 
+### Electron UI (experimental)
+
+This repo now includes a minimal Electron interface in `electron/`.
+It starts the Python backend in headless mode and shows processed speech history.
+
+```bash
+cd electron
+npm install
+npm start
+```
+
+Notes:
+- On macOS, if running Python 3.13 locally, the app uses a Quartz-based hotkey listener.
+- The Electron window reads `~/.config/rawspeak/history.jsonl` and updates live.
+
 ---
 
 ## Roadmap (post-v1)
