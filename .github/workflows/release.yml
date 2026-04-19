@@ -59,6 +59,10 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: pyinstaller rawspeak.spec --noconfirm
 
+      - name: Smoke test packaged app
+        if: steps.check.outputs.exists == 'false'
+        run: ./dist/RawSpeak.app/Contents/MacOS/RawSpeak --help
+
       - name: Install create-dmg
         if: steps.check.outputs.exists == 'false'
         run: brew install create-dmg
@@ -79,8 +83,7 @@ jobs:
             --hide-extension "RawSpeak.app" \
             --app-drop-link 600 185 \
             "dist/RawSpeak-${VERSION}.dmg" \
-            "dist/dmg/" \
-            || true
+            "dist/dmg/"
           ls -lh dist/*.dmg
 
       - name: Create GitHub Release
