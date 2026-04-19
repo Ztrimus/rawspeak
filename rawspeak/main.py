@@ -283,7 +283,8 @@ def main() -> None:
         app = RawSpeak(use_tk_ui=False)
         app.run()
     else:
-        app = RawSpeak(use_tk_ui=True)
+        # Default CLI run uses headless mode; desktop UI is now Electron.
+        app = RawSpeak(use_tk_ui=False)
         app.run()
 
 
