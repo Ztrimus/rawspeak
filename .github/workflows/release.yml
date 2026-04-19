@@ -7,6 +7,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   test:
     runs-on: macos-latest
@@ -33,6 +36,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
@@ -55,36 +64,29 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build .app with PyInstaller
-        if: steps.check.outputs.exists == 'false'
-        run: pyinstaller rawspeak.spec --noconfirm
-
-      - name: Smoke test packaged app
-        if: steps.check.outputs.exists == 'false'
-        run: ./dist/RawSpeak.app/Contents/MacOS/RawSpeak --help
-
-      - name: Install create-dmg
-        if: steps.check.outputs.exists == 'false'
-        run: brew install create-dmg
-
-      - name: Build DMG
+      - name: Build backend binary for Electron
         if: steps.check.outputs.exists == 'false'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p dist/dmg
-          cp -R dist/RawSpeak.app dist/dmg/
-          create-dmg \
-            --volname "RawSpeak" \
-            --volicon "assets/RawSpeak.icns" \
-            --window-pos 200 120 \
-            --window-size 800 400 \
-            --icon-size 100 \
-            --icon "RawSpeak.app" 200 190 \
-            --hide-extension "RawSpeak.app" \
-            --app-drop-link 600 185 \
-            "dist/RawSpeak-${VERSION}.dmg" \
-            "dist/dmg/"
-          ls -lh dist/*.dmg
+          mkdir -p electron/resources/backend
+          pyinstaller backend_entry.py \
+            --name rawspeak-backend \
+            --onefile \
+            --noconsole \
+            --distpath electron/resources/backend \
+            --workpath build/backend \
+            --specpath build/backend \
+            --clean
+          test -x electron/resources/backend/rawspeak-backend
+
+      - name: Install Electron dependencies
+        if: steps.check.outputs.exists == 'false'
+        working-directory: electron
+        run: npm ci
+
+      - name: Build Electron macOS DMG
+        if: steps.check.outputs.exists == 'false'
+        working-directory: electron
+        run: npm run dist:mac
 
       - name: Create GitHub Release
         if: steps.check.outputs.exists == 'false'
@@ -93,7 +95,7 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
-          DMG=$(ls dist/*.dmg | head -1)
+          DMG=$(ls electron/dist/RawSpeak-${VERSION}.dmg | head -1)
           gh release create "$TAG" "$DMG" \
             --title "RawSpeak $VERSION" \
             --generate-notes

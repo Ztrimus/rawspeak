@@ -1,14 +1,40 @@
 {
   "name": "rawspeak-electron",
   "productName": "RawSpeak",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "private": true,
   "description": "Electron UI for RawSpeak history",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac dmg"
   },
   "devDependencies": {
-    "electron": "^37.2.0"
+    "electron": "^37.2.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.rawspeak.app",
+    "productName": "RawSpeak",
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "../assets/RawSpeak.icns"
+    },
+    "files": [
+      "**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "artifactName": "RawSpeak-${version}.${ext}"
   }
 }

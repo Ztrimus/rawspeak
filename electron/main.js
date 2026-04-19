@@ -113,12 +113,31 @@ function parseHistory(limit = 300) {
 
 function spawnBackend() {
   if (backend) return;
-  const repoRoot = path.resolve(__dirname, "..");
-  const venvPython = path.join(repoRoot, ".venv", "bin", "python");
-  const pythonBin = fs.existsSync(venvPython) ? venvPython : "python3";
+  let command = null;
+  let args = [];
+  let cwd = process.resourcesPath;
 
-  backend = spawn(pythonBin, ["-m", "rawspeak.main", "run-headless"], {
-    cwd: repoRoot,
+  if (app.isPackaged) {
+    const backendName = process.platform === "win32" ? "rawspeak-backend.exe" : "rawspeak-backend";
+    const bundledBackend = path.join(process.resourcesPath, "backend", backendName);
+    if (fs.existsSync(bundledBackend)) {
+      command = bundledBackend;
+    } else {
+      console.error(`[rawspeak:error] bundled backend missing at ${bundledBackend}`);
+    }
+  }
+
+  // Local development fallback: run backend from source.
+  if (!command) {
+    const repoRoot = path.resolve(__dirname, "..");
+    const venvPython = path.join(repoRoot, ".venv", "bin", "python");
+    command = fs.existsSync(venvPython) ? venvPython : "python3";
+    args = ["-m", "rawspeak.main", "run-headless"];
+    cwd = repoRoot;
+  }
+
+  backend = spawn(command, args, {
+    cwd,
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
