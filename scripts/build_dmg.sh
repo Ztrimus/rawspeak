@@ -8,36 +8,28 @@ cd "$ROOT_DIR"
 VERSION=$(python -c "from rawspeak import __version__; print(__version__)")
 APP_NAME="RawSpeak"
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
-DMG_ICON="assets/RawSpeak.icns"
 
 echo "==> Building ${APP_NAME} v${VERSION}"
 
-echo "--- Running PyInstaller ---"
-pyinstaller rawspeak.spec --noconfirm
+echo "--- Building headless backend binary ---"
+mkdir -p electron/resources/backend
+pyinstaller backend_entry.py \
+  --name rawspeak-backend \
+  --onefile \
+  --noconsole \
+  --distpath electron/resources/backend \
+  --workpath build/backend \
+  --specpath build/backend \
+  --clean
 
-echo "--- Preparing DMG staging ---"
-mkdir -p dist/dmg
-rm -rf dist/dmg/*
-cp -R "dist/${APP_NAME}.app" dist/dmg/
+echo "--- Installing Electron dependencies ---"
+(cd electron && npm ci)
 
-echo "--- Creating DMG ---"
-test -f "dist/${DMG_NAME}" && rm "dist/${DMG_NAME}"
+echo "--- Building Electron DMG ---"
+(cd electron && npm run dist:mac)
 
-create-dmg \
-  --volname "${APP_NAME}" \
-  --volicon "${DMG_ICON}" \
-  --window-pos 200 120 \
-  --window-size 800 400 \
-  --icon-size 100 \
-  --icon "${APP_NAME}.app" 200 190 \
-  --hide-extension "${APP_NAME}.app" \
-  --app-drop-link 600 185 \
-  "dist/${DMG_NAME}" \
-  "dist/dmg/" \
-  || true
-
-if [ -f "dist/${DMG_NAME}" ]; then
-  echo "==> DMG created: dist/${DMG_NAME}"
+if [ -f "electron/dist/${DMG_NAME}" ]; then
+  echo "==> DMG created: electron/dist/${DMG_NAME}"
 else
   ls dist/*.dmg 2>/dev/null && echo "==> DMG created (name may vary from create-dmg)" \
     || { echo "ERROR: DMG creation failed"; exit 1; }
