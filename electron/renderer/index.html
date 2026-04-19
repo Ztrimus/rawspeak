@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RawSpeak</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="top card">
+        <div>
+          <h1>RawSpeak</h1>
+          <p>Processed speech history</p>
+        </div>
+        <div class="badge">Live</div>
+      </header>
+
+      <section class="hint card">
+        <strong>Hotkey:</strong> set `hotkey = "&lt;f5&gt;"` in your config if desired.
+      </section>
+
+      <section class="stats">
+        <article class="stat card">
+          <p class="label">Today</p>
+          <p id="today-count" class="value">0</p>
+        </article>
+        <article class="stat card">
+          <p class="label">Total shown</p>
+          <p id="total-count" class="value">0</p>
+        </article>
+      </section>
+
+      <section class="list-wrap card">
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th class="time-col">Time</th>
+              <th>Text</th>
+              <th class="actions-col"></th>
+            </tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+        <div id="empty" class="empty">No processed speech yet.</div>
+      </section>
+      <div id="toast" class="toast">Copied</div>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
