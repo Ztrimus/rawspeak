@@ -9,6 +9,7 @@ import threading
 from .audio import AudioRecorder
 from .cleaner import TextCleaner
 from .config import load_config, write_default_config
+from .history import HistoryStore
 from .hotkey import HotkeyListener
 from .paste import Paster
 from .transcriber import Transcriber
@@ -30,9 +31,10 @@ class RawSpeak:
         idle  ──hotkey──►  listening  ──hotkey──►  processing  ──done──►  idle
     """
 
-    def __init__(self) -> None:
+    def __init__(self, use_tk_ui: bool = True) -> None:
         self.config = load_config()
         write_default_config()
+        self.use_tk_ui = use_tk_ui
 
         self.recorder = AudioRecorder(
             sample_rate=self.config.sample_rate,
@@ -51,6 +53,16 @@ class RawSpeak:
             groq_model=self.config.groq_model,
         )
         self.paster = Paster()
+        self.history = HistoryStore()
+        self.ui = None
+        if self.use_tk_ui:
+            from .ui import HistoryWindow
+
+            self.ui = HistoryWindow(
+                entries=self.history.list_recent(),
+                on_close=self._quit,
+                on_toggle_recording=self._on_hotkey,
+            )
         self.tray = TrayApp(on_quit=self._quit)
         self.hotkey = HotkeyListener(
             hotkey=self.config.hotkey,
@@ -87,6 +99,8 @@ class RawSpeak:
             return
         self._recording = True
         logger.info("Recording started — press the hotkey again to stop")
+        if self.ui:
+            self.ui.set_state("listening")
         self.tray.set_state("listening")
 
     def _stop_and_process(self) -> None:
@@ -94,6 +108,8 @@ class RawSpeak:
         self._recording = False
         self._processing = True
         logger.info("Recording stopped — processing audio…")
+        if self.ui:
+            self.ui.set_state("processing")
         self.tray.set_state("processing")
         thread = threading.Thread(
             target=self._run_pipeline, daemon=True, name="rawspeak-pipeline"
@@ -126,6 +142,10 @@ class RawSpeak:
             cleaned = self.cleaner.clean(text)
             logger.info("Cleaned text: %r", cleaned)
 
+            entry = self.history.append(cleaned)
+            if self.ui:
+                self.ui.enqueue(entry)
+
             logger.info("Pasting…")
             self.paster.paste(cleaned)
             logger.info("Done!")
@@ -135,6 +155,8 @@ class RawSpeak:
         finally:
             with self._lock:
                 self._processing = False
+            if self.ui:
+                self.ui.set_state("idle")
             self.tray.set_state("idle")
 
     # ------------------------------------------------------------------
@@ -148,6 +170,9 @@ class RawSpeak:
         if self.recorder.is_recording:
             self.recorder.stop()
         self.hotkey.stop()
+        self.tray.stop()
+        if self.ui:
+            self.ui.stop()
         sys.exit(0)
 
     def run(self) -> None:
@@ -162,29 +187,64 @@ class RawSpeak:
             "(The Whisper model will be downloaded on first use if not cached.)"
         )
 
+        self._check_permissions()
         self.hotkey.start()
 
-        if sys.platform == "darwin":
-            # AppKit requires tray setup on the main thread on macOS.
-            try:
-                self.tray.run_blocking()
-                # If run_blocking returns, the tray backend likely failed to start.
-                # Keep the process alive so global hotkeys still work.
-                logger.warning(
-                    "Tray loop exited. Running without tray; hotkeys remain active."
-                )
-                self._stop_event.wait()
-            except KeyboardInterrupt:
-                self._quit()
-            except Exception:
-                logger.exception("Tray failed to start on macOS; running without tray")
-                self._stop_event.wait()
-        else:
+        # On macOS, pystray requires AppKit main-thread access and can clash
+        # with alternative UI loops; keep tray disabled there for reliability.
+        if sys.platform != "darwin":
             self.tray.start()
+
+        if self.use_tk_ui and self.ui:
+            try:
+                self.ui.run_blocking()
+            except KeyboardInterrupt:
+                self._quit()
+        else:
             try:
                 self._stop_event.wait()
             except KeyboardInterrupt:
                 self._quit()
+
+    def _check_permissions(self) -> None:
+        """Best-effort startup checks for required OS permissions."""
+        if sys.platform != "darwin":
+            return
+
+        warnings: list[str] = []
+
+        try:
+            from ApplicationServices import (
+                AXIsProcessTrusted,
+                AXIsProcessTrustedWithOptions,
+                kAXTrustedCheckOptionPrompt,
+            )
+
+            if not AXIsProcessTrusted():
+                AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+                warnings.append("Enable Accessibility for RawSpeak/Terminal in System Settings.")
+        except Exception:
+            warnings.append("Accessibility permission status could not be verified.")
+
+        try:
+            from Quartz import CGPreflightListenEventAccess, CGRequestListenEventAccess
+
+            if not CGPreflightListenEventAccess():
+                CGRequestListenEventAccess()
+                warnings.append("Enable Input Monitoring for RawSpeak/Terminal in System Settings.")
+        except Exception:
+            warnings.append("Input Monitoring permission status could not be verified.")
+
+        notice = (
+            "Permissions check: "
+            + (" ; ".join(warnings) if warnings else "looks good. Hotkey should work.")
+        )
+        if self.ui:
+            self.ui.set_notice(notice)
+        if warnings:
+            logger.warning(notice)
+        else:
+            logger.info(notice)
 
 
 def main() -> None:
@@ -206,7 +266,7 @@ def main() -> None:
         "command",
         nargs="?",
         default="run",
-        choices=["run", "install", "uninstall"],
+        choices=["run", "run-headless", "install", "uninstall"],
         help="'install' sets up auto-start at login; 'uninstall' removes it.",
     )
     args = parser.parse_args()
@@ -219,8 +279,11 @@ def main() -> None:
         from .launcher import uninstall
 
         uninstall()
+    elif args.command == "run-headless":
+        app = RawSpeak(use_tk_ui=False)
+        app.run()
     else:
-        app = RawSpeak()
+        app = RawSpeak(use_tk_ui=True)
         app.run()
 
 
