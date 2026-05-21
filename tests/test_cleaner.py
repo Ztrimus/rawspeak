@@ -74,7 +74,30 @@ class TestApplyGlossary:
         assert result == "Saurabh Zinjad"
 
 
-class TestTextCleanerNoneBackend:
+class TestBuildUserContent:
+    def test_includes_date(self):
+        import datetime
+        cleaner = TextCleaner(backend="none")
+        content = cleaner._build_user_content("hello")
+        assert datetime.date.today().isoformat() in content
+
+    def test_includes_transcription(self):
+        cleaner = TextCleaner(backend="none")
+        content = cleaner._build_user_content("test speech")
+        assert "test speech" in content
+
+    def test_includes_proper_nouns_from_glossary(self):
+        cleaner = TextCleaner(backend="none", user_glossary={"Jhunjhun": "Zinjad"})
+        content = cleaner._build_user_content("hello")
+        assert "Zinjad" in content
+
+    def test_no_glossary_omits_proper_noun_hint(self):
+        cleaner = TextCleaner(backend="none")
+        content = cleaner._build_user_content("hello")
+        assert "Proper nouns" not in content
+
+
+
     def test_uses_rule_based(self):
         cleaner = TextCleaner(backend="none")
         result = cleaner.clean("um hello uh world")
@@ -127,6 +150,24 @@ class TestTextCleanerOllamaBackend:
 
         assert "system" in captured[0]
         assert len(captured[0]["system"]) > 50  # non-trivial system prompt
+
+    def test_ollama_payload_temperature(self):
+        """Ollama request must set temperature=0.1 to prevent paraphrasing."""
+        cleaner = TextCleaner(backend="ollama")
+        captured: list[dict] = []
+
+        def fake_urlopen(req, timeout=30):
+            captured.append(json.loads(req.data.decode()))
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"response": "ok"}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            cleaner._clean_ollama("test input")
+
+        assert captured[0].get("options", {}).get("temperature") == 0.1
 
     def test_falls_back_to_rule_based_on_error(self):
         cleaner = TextCleaner(backend="ollama")
@@ -200,6 +241,26 @@ class TestTextCleanerGroqBackend:
 
         roles = [m["role"] for m in captured[0]["messages"]]
         assert "system" in roles
+
+    def test_groq_payload_temperature(self):
+        """Groq request must set temperature=0.1."""
+        cleaner = TextCleaner(backend="groq", groq_api_key="test-key")
+        captured: list[dict] = []
+
+        def fake_urlopen(req, timeout=30):
+            captured.append(json.loads(req.data.decode()))
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(
+                {"choices": [{"message": {"content": "ok"}}]}
+            ).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            cleaner._clean_groq("test input")
+
+        assert captured[0]["temperature"] == 0.1
 
     def test_falls_back_to_rule_based_on_error(self):
         cleaner = TextCleaner(backend="groq", groq_api_key="test-key")
