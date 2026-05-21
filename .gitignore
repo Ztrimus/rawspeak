@@ -8,3 +8,4 @@ assets/*.iconset/
 electron/node_modules/
 build/
 dist/
+docs/
