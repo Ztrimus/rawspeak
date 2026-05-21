@@ -270,3 +270,104 @@ class TestTextCleanerGroqBackend:
 
         assert "um" not in result.lower()
         assert "test" in result.lower()
+
+
+class TestContextInjection:
+    """active_app and clipboard_text flow through to _build_user_content."""
+
+    def _make_cleaner(self):
+        return TextCleaner(backend="none")
+
+    def test_active_app_in_user_content(self):
+        cleaner = self._make_cleaner()
+        content = cleaner._build_user_content("hello", active_app="Slack")
+        assert "Slack" in content
+
+    def test_app_style_injected_for_known_app(self):
+        cleaner = self._make_cleaner()
+        content = cleaner._build_user_content("hello", active_app="Slack")
+        # messaging style should mention casual/conversational
+        assert "casual" in content.lower() or "conversational" in content.lower()
+
+    def test_email_app_injects_formal_style(self):
+        cleaner = self._make_cleaner()
+        content = cleaner._build_user_content("hello", active_app="Mail")
+        assert "formal" in content.lower() or "professional" in content.lower()
+
+    def test_code_app_injects_code_style(self):
+        cleaner = self._make_cleaner()
+        content = cleaner._build_user_content("hello", active_app="Cursor")
+        assert "camelCase" in content or "code" in content.lower()
+
+    def test_unknown_app_no_style_injected(self):
+        cleaner = self._make_cleaner()
+        content = cleaner._build_user_content("hello", active_app="FancyUnknownApp")
+        # Unknown apps have no style hint — but app name is still logged
+        assert "FancyUnknownApp" in content
+
+    def test_clipboard_text_in_user_content(self):
+        cleaner = self._make_cleaner()
+        content = cleaner._build_user_content("hello", clipboard_text="Dear team,")
+        assert "Dear team," in content
+
+    def test_clipboard_text_truncated(self):
+        cleaner = self._make_cleaner()
+        long_text = "x" * 1000
+        # _build_user_content itself clips at 300
+        content = cleaner._build_user_content("hello", clipboard_text=long_text)
+        # The pasted portion should be ≤300 chars of x's
+        assert "x" * 301 not in content
+
+    def test_clean_passes_active_app_to_ollama(self):
+        cleaner = TextCleaner(backend="ollama")
+        captured: list[dict] = []
+
+        def fake_urlopen(req, timeout=30):
+            captured.append(json.loads(req.data.decode()))
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"response": "ok"}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            cleaner.clean("test", active_app="Slack", clipboard_text="hi there")
+
+        prompt = captured[0]["prompt"]
+        assert "Slack" in prompt
+        assert "hi there" in prompt
+
+    def test_clean_passes_active_app_to_groq(self):
+        cleaner = TextCleaner(backend="groq", groq_api_key="test-key")
+        captured: list[dict] = []
+
+        def fake_urlopen(req, timeout=30):
+            captured.append(json.loads(req.data.decode()))
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(
+                {"choices": [{"message": {"content": "ok"}}]}
+            ).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            cleaner.clean("test", active_app="Mail", clipboard_text="Subject: hello")
+
+        user_msg = next(
+            m["content"] for m in captured[0]["messages"] if m["role"] == "user"
+        )
+        assert "Mail" in user_msg
+        assert "Subject: hello" in user_msg
+
+
+class TestUncertaintyRule:
+    """System prompt must contain the uncertainty flagging instruction."""
+
+    def test_system_prompt_mentions_uncertainty_brackets(self):
+        from rawspeak.cleaner import _SYSTEM_PROMPT
+        assert "[?" in _SYSTEM_PROMPT
+
+    def test_system_prompt_has_ten_rules(self):
+        from rawspeak.cleaner import _SYSTEM_PROMPT
+        assert "10." in _SYSTEM_PROMPT

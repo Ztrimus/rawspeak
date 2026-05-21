@@ -9,6 +9,7 @@ import threading
 from .audio import AudioRecorder
 from .cleaner import TextCleaner
 from .config import load_config, write_default_config
+from .context import get_active_app_name, get_clipboard_text
 from .history import HistoryStore
 from .hotkey import HotkeyListener
 from .paste import Paster
@@ -75,6 +76,9 @@ class RawSpeak:
         self._processing = False
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
+        # Context snapshot captured at recording-start time.
+        self._active_app: str = ""
+        self._clipboard_text: str = ""
 
     # ------------------------------------------------------------------
     # Hotkey handler
@@ -93,6 +97,13 @@ class RawSpeak:
 
     def _start_recording(self) -> None:
         """Begin capturing audio (called with _lock held)."""
+        # Snapshot context NOW — the target app still has focus before we
+        # start recording.  This gives the LLM the right style + clipboard text.
+        self._active_app = get_active_app_name()
+        self._clipboard_text = get_clipboard_text()
+        logger.info("Context snapshot — app: %r  clipboard: %d chars",
+                    self._active_app, len(self._clipboard_text))
+
         try:
             self.recorder.start()
         except Exception:
@@ -139,11 +150,19 @@ class RawSpeak:
                 logger.info("Empty transcription — nothing to paste")
                 return
 
-            logger.info("Cleaning up text…")
-            cleaned = self.cleaner.clean(text)
+            logger.info("Cleaning up text (app=%r)…", self._active_app)
+            cleaned = self.cleaner.clean(
+                text,
+                active_app=self._active_app,
+                clipboard_text=self._clipboard_text,
+            )
             logger.info("Cleaned text: %r", cleaned)
 
-            entry = self.history.append(cleaned)
+            entry = self.history.append(
+                cleaned,
+                audio=audio,
+                sample_rate=self.config.sample_rate,
+            )
             if self.ui:
                 self.ui.enqueue(entry)
 
