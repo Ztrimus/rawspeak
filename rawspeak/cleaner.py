@@ -9,6 +9,8 @@ import re
 import urllib.error
 import urllib.request
 
+from .context import STYLE_FOR_CATEGORY, get_app_category
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -45,6 +47,9 @@ remove the command word from the output.
 ideas. Do NOT summarise or paraphrase.
 9. Output ONLY the cleaned text — no explanation, no preamble, no surrounding \
 quotes.
+10. If a section is too garbled to reconstruct confidently, output your best \
+guess wrapped in [? ... ?] so the user knows to review it \
+(e.g. "[? Study size 1 pm ?]" → the user will correct it manually).
 
 Examples:
 
@@ -99,8 +104,22 @@ class TextCleaner:
     # Public API
     # ------------------------------------------------------------------
 
-    def clean(self, text: str) -> str:
+    def clean(
+        self,
+        text: str,
+        active_app: str = "",
+        clipboard_text: str = "",
+    ) -> str:
         """Return a cleaned version of *text*.
+
+        Args:
+            text:           Raw STT transcription to clean.
+            active_app:     Display name of the app the user is typing into
+                            (e.g. "Slack", "Mail", "Cursor").  Used to pick
+                            the right output style (casual vs formal vs code).
+            clipboard_text: Text already in the focused field/clipboard before
+                            recording started.  Gives the LLM context about
+                            what the user is appending to.
 
         Applies the user glossary first, then calls the configured LLM
         backend.  Falls back to rule-based cleanup when the backend fails.
@@ -112,30 +131,49 @@ class TextCleaner:
 
         if self.backend == "ollama":
             try:
-                return self._clean_ollama(text)
+                return self._clean_ollama(text, active_app, clipboard_text)
             except Exception as exc:
                 logger.warning("Ollama cleanup failed (%s); using rule-based fallback", exc)
                 return _rule_based_clean(text)
 
         if self.backend == "groq":
             try:
-                return self._clean_groq(text)
+                return self._clean_groq(text, active_app, clipboard_text)
             except Exception as exc:
                 logger.warning("Groq cleanup failed (%s); using rule-based fallback", exc)
                 return _rule_based_clean(text)
 
         return _rule_based_clean(text)
 
-    def _build_user_content(self, text: str) -> str:
-        """Build the user-turn message with optional context hints.
+    def _build_user_content(
+        self,
+        text: str,
+        active_app: str = "",
+        clipboard_text: str = "",
+    ) -> str:
+        """Build the user-turn message with runtime context hints.
 
-        Injects today's date and any user-glossary proper nouns so the LLM
-        can resolve date-relative expressions and preserve specialised names
-        it might otherwise normalise away.
+        Injects:
+        - Today's date (for resolving "tomorrow", "next Monday", etc.)
+        - Active app name + per-app style instruction
+        - Clipboard text (what the user is appending to)
+        - Glossary proper nouns (so the LLM never normalises them away)
         """
         context_lines: list[str] = [
             f"Date: {datetime.date.today().isoformat()}",
         ]
+
+        if active_app:
+            context_lines.append(f"Active app: {active_app}")
+            category = get_app_category(active_app)
+            style = STYLE_FOR_CATEGORY.get(category, "")
+            if style:
+                context_lines.append(f"Output style: {style}")
+
+        if clipboard_text:
+            preview = clipboard_text[:300].replace("\n", " ").strip()
+            context_lines.append(f"Text before cursor: \"{preview}\"")
+
         if self.user_glossary:
             names = ", ".join(sorted(self.user_glossary.values()))
             context_lines.append(
@@ -149,13 +187,18 @@ class TextCleaner:
     # Backend implementations
     # ------------------------------------------------------------------
 
-    def _clean_ollama(self, text: str) -> str:
+    def _clean_ollama(
+        self,
+        text: str,
+        active_app: str = "",
+        clipboard_text: str = "",
+    ) -> str:
         """Send *text* to a local Ollama server and return the response."""
         url = f"{self.ollama_url}/api/generate"
         payload = {
             "model": self.ollama_model,
             "system": _SYSTEM_PROMPT,
-            "prompt": self._build_user_content(text),
+            "prompt": self._build_user_content(text, active_app, clipboard_text),
             "stream": False,
             "options": {"temperature": 0.1},
         }
@@ -170,7 +213,12 @@ class TextCleaner:
             result = json.loads(resp.read().decode())
         return result.get("response", text).strip()
 
-    def _clean_groq(self, text: str) -> str:
+    def _clean_groq(
+        self,
+        text: str,
+        active_app: str = "",
+        clipboard_text: str = "",
+    ) -> str:
         """Send *text* to the Groq chat-completions API and return the response."""
         if not self.groq_api_key:
             raise ValueError("Groq API key not configured")
@@ -180,7 +228,7 @@ class TextCleaner:
             "model": self.groq_model,
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": self._build_user_content(text)},
+                {"role": "user", "content": self._build_user_content(text, active_app, clipboard_text)},
             ],
             "temperature": 0.1,
             "max_tokens": 1024,
