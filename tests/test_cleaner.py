@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rawspeak.cleaner import TextCleaner, _rule_based_clean
+from rawspeak.cleaner import TextCleaner, _apply_glossary, _rule_based_clean
 
 
 class TestRuleBasedClean:
@@ -35,6 +35,44 @@ class TestRuleBasedClean:
         result = _rule_based_clean("I need to go to the store")
         assert "store" in result
 
+    def test_removes_consecutive_word_repetition(self):
+        result = _rule_based_clean("I need to go For for tomorrow")
+        assert "for for" not in result.lower()
+        assert "tomorrow" in result.lower()
+
+    def test_removes_double_sorry(self):
+        result = _rule_based_clean("set an alarm for 1 a.m sorry sorry yes")
+        assert "sorry sorry" not in result.lower()
+
+    def test_three_word_repetition(self):
+        result = _rule_based_clean("the the the store")
+        assert "the the" not in result.lower()
+
+
+class TestApplyGlossary:
+    def test_replaces_exact_match(self):
+        result = _apply_glossary("Hello Jhunjhun", {"Jhunjhun": "Zinjad"})
+        assert result == "Hello Zinjad"
+
+    def test_case_insensitive_match(self):
+        result = _apply_glossary("Hello jhunjhun", {"Jhunjhun": "Zinjad"})
+        assert "Zinjad" in result
+
+    def test_whole_word_only(self):
+        # Should not replace "Jhunjhuns" (different word form)
+        result = _apply_glossary("Jhunjhuns party", {"Jhunjhun": "Zinjad"})
+        assert "Jhunjhuns" in result
+
+    def test_empty_glossary(self):
+        assert _apply_glossary("hello world", {}) == "hello world"
+
+    def test_multiple_entries(self):
+        result = _apply_glossary(
+            "Suryabh Jhunjhaj",
+            {"Suryabh": "Saurabh", "Jhunjhaj": "Zinjad"},
+        )
+        assert result == "Saurabh Zinjad"
+
 
 class TestTextCleanerNoneBackend:
     def test_uses_rule_based(self):
@@ -48,6 +86,12 @@ class TestTextCleanerNoneBackend:
         cleaner = TextCleaner(backend="none")
         assert cleaner.clean("") == ""
         assert cleaner.clean("   ") == "   "
+
+    def test_glossary_applied_before_rule_based(self):
+        cleaner = TextCleaner(backend="none", user_glossary={"Jhunjhun": "Zinjad"})
+        result = cleaner.clean("Hello Jhunjhun")
+        assert "Jhunjhun" not in result
+        assert "Zinjad" in result
 
 
 class TestTextCleanerOllamaBackend:
@@ -65,6 +109,25 @@ class TestTextCleanerOllamaBackend:
 
         assert result == "I need to go to the store."
 
+    def test_ollama_payload_includes_system(self):
+        """Ollama request must include the system prompt field."""
+        cleaner = TextCleaner(backend="ollama")
+        captured: list[dict] = []
+
+        def fake_urlopen(req, timeout=30):
+            captured.append(json.loads(req.data.decode()))
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"response": "ok"}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            cleaner._clean_ollama("test input")
+
+        assert "system" in captured[0]
+        assert len(captured[0]["system"]) > 50  # non-trivial system prompt
+
     def test_falls_back_to_rule_based_on_error(self):
         cleaner = TextCleaner(backend="ollama")
 
@@ -73,6 +136,26 @@ class TestTextCleanerOllamaBackend:
 
         assert "um" not in result.lower()
         assert "test" in result.lower()
+
+    def test_glossary_applied_before_llm_call(self):
+        """Glossary substitution happens before the text is sent to Ollama."""
+        cleaner = TextCleaner(backend="ollama", user_glossary={"Jhunjhun": "Zinjad"})
+        sent_prompts: list[str] = []
+
+        def fake_urlopen(req, timeout=30):
+            payload = json.loads(req.data.decode())
+            sent_prompts.append(payload.get("prompt", ""))
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"response": "Hello Zinjad."}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            cleaner.clean("Hello Jhunjhun")
+
+        assert "Jhunjhun" not in sent_prompts[0]
+        assert "Zinjad" in sent_prompts[0]
 
 
 class TestTextCleanerGroqBackend:
@@ -96,6 +179,27 @@ class TestTextCleanerGroqBackend:
             result = cleaner._clean_groq("um some text uh here")
 
         assert result == "Cleaned text."
+
+    def test_groq_payload_has_system_role(self):
+        """Groq request must include a system role message."""
+        cleaner = TextCleaner(backend="groq", groq_api_key="test-key")
+        captured: list[dict] = []
+
+        def fake_urlopen(req, timeout=30):
+            captured.append(json.loads(req.data.decode()))
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(
+                {"choices": [{"message": {"content": "ok"}}]}
+            ).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            cleaner._clean_groq("test input")
+
+        roles = [m["role"] for m in captured[0]["messages"]]
+        assert "system" in roles
 
     def test_falls_back_to_rule_based_on_error(self):
         cleaner = TextCleaner(backend="groq", groq_api_key="test-key")

@@ -16,8 +16,8 @@ class TestConfigDefaults:
     def test_default_sample_rate(self):
         assert Config().sample_rate == 16000
 
-    def test_default_whisper_model(self):
-        assert Config().whisper_model == "openai/whisper-base"
+    def test_default_transcriber_model(self):
+        assert Config().transcriber_model == "medium_streaming"
 
     def test_default_cleanup_backend(self):
         assert Config().cleanup_backend == "ollama"
@@ -38,10 +38,10 @@ class TestLoadConfig:
 
     def test_loads_values_from_toml_file(self, tmp_path, monkeypatch):
         cfg_file = tmp_path / "config.toml"
-        cfg_file.write_text('whisper_model = "openai/whisper-tiny"\nsample_rate = 8000\n')
+        cfg_file.write_text('transcriber_model = "small_streaming"\nsample_rate = 8000\n')
         monkeypatch.setattr("rawspeak.config.CONFIG_FILE", cfg_file)
         config = load_config()
-        assert config.whisper_model == "openai/whisper-tiny"
+        assert config.transcriber_model == "small_streaming"
         assert config.sample_rate == 8000
 
     def test_ignores_unknown_keys_in_toml(self, tmp_path, monkeypatch):

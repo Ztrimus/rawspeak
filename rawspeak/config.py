@@ -3,22 +3,10 @@
 from __future__ import annotations
 
 import os
-import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
-# Python 3.11+ includes tomllib in stdlib; older versions need tomli.
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[no-redef]
-    except ImportError:
-        try:
-            import tomli as tomllib  # type: ignore[no-redef]
-        except ImportError:
-            tomllib = None  # type: ignore[assignment]
+import tomllib
 
 CONFIG_DIR = Path.home() / ".config" / "rawspeak"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
@@ -39,17 +27,22 @@ hotkey = "<ctrl>+<alt>+<space>"
 mouse_button = "middle"
 
 # Audio capture settings.
-sample_rate = 16000  # Hz — Whisper expects 16 kHz
+sample_rate = 16000  # Hz — Moonshine expects 16 kHz (resamples if different)
 channels    = 1      # Mono
 
-# HuggingFace Whisper model identifier.
-# Smaller = faster; larger = more accurate.
-# Options: "openai/whisper-tiny", "openai/whisper-base", "openai/whisper-small"
-whisper_model = "openai/whisper-base"
+# Moonshine Voice model size for speech-to-text transcription.
+# All models run fully local — no internet required after first download.
+# Models are cached in ~/.cache/moonshine_voice after the first run.
+#
+# Options (accuracy improves, speed decreases top to bottom):
+#   "tiny"             — 26 M params,  ~12.7% WER, fastest
+#   "base"             — 58 M params,  ~10.1% WER, balanced CPU option
+#   "small_streaming"  — 123 M params,  ~7.8% WER, good for mid-range hardware
+#   "medium_streaming" — 245 M params,  ~6.7% WER, beats Whisper Large-v3
+transcriber_model = "medium_streaming"
 
 # Spoken language for transcription (ISO 639-1 code, e.g. "en").
-# Forces Whisper to skip language detection and transcribe directly in this language,
-# which is faster and avoids hallucination on background noise.
+# Supported: en, es, zh, ja, ko, vi, ar, uk
 language = "en"
 
 # Text-cleanup backend: "ollama" | "groq" | "none"
@@ -66,6 +59,15 @@ groq_model = "llama-3.1-8b-instant"
 
 # Show a desktop notification after each successful paste.
 show_notifications = true
+
+# User glossary — teach RawSpeak proper nouns or words your STT engine
+# consistently mishears.  Add one entry per line under [glossary]:
+#   wrong_form = "correct form"
+# Matching is whole-word and case-insensitive.
+#
+# [glossary]
+# "Jhunjhun" = "Zinjad"
+# "Suryabh"  = "Saurabh"
 """
 
 
@@ -78,10 +80,10 @@ class Config:
     # Audio
     sample_rate: int = 16000
     channels: int = 1
-    device: Optional[str] = None  # None → system default
+    device: str | None = None  # None → system default
 
     # Transcription
-    whisper_model: str = "openai/whisper-base"
+    transcriber_model: str = "medium_streaming"
     language: str = "en"
 
     # Cleanup
@@ -98,6 +100,10 @@ class Config:
     # UI
     show_notifications: bool = True
 
+    # User glossary: correct words the STT engine mishears.
+    # Populated from the [glossary] section of config.toml.
+    user_glossary: dict[str, str] = field(default_factory=dict)
+
 
 def load_config() -> Config:
     """Load configuration, merging file values on top of defaults."""
@@ -110,14 +116,13 @@ def load_config() -> Config:
     if not CONFIG_FILE.exists():
         return config
 
-    if tomllib is None:
-        return config
-
     try:
         with open(CONFIG_FILE, "rb") as fh:
             data = tomllib.load(fh)
         for key, value in data.items():
-            if hasattr(config, key):
+            if key == "glossary" and isinstance(value, dict):
+                config.user_glossary = {str(k): str(v) for k, v in value.items()}
+            elif hasattr(config, key):
                 setattr(config, key, value)
     except Exception:
         pass  # silently use defaults if the file is malformed
