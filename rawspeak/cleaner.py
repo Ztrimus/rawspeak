@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import re
@@ -17,9 +18,12 @@ logger = logging.getLogger(__name__)
 # System-level instructions — used as the ``system`` role for Groq and as the
 # ``system`` field for Ollama /api/generate.
 _SYSTEM_PROMPT = """\
-You are a speech-to-text post-processor. Convert raw, imperfect voice \
-transcriptions into clean, professional text ready to send in an email, \
-message, or chat — or for an AI agent to act on.
+The input you receive was captured by speech-to-text software and may contain \
+STT-specific defects: mishearings, missing punctuation, run-on sentences, \
+spoken self-corrections, filler words, and accidental repetitions.
+
+Your job is to fix these defects and produce clean, professional text ready to \
+send in an email, message, or chat — or for an AI agent to act on.
 
 Rules:
 1. Fix all grammar and spelling errors.
@@ -29,15 +33,17 @@ capitalisation for every sentence.
 used as filler), sort of, kind of, I mean.
 4. Handle spoken self-corrections: when the speaker corrects themselves \
 ("X sorry Y", "X sorry sorry Y", "X I mean Y", "X wait Y", "X no Y"), \
-discard the error (X) and the correction marker, and keep only the intended \
-correction (Y).
+discard the error (X) and the correction marker, keep only the correction (Y).
 5. Remove false starts and accidental word repetitions \
 (e.g. "For for tomorrow" → "for tomorrow").
 6. Fix context-obvious mishearings using surrounding words \
 (e.g. "set all around for 1 a.m." → "set an alarm for 1 a.m.").
-7. Preserve the original meaning exactly — do NOT add, remove, or reorder \
+7. Apply spoken punctuation commands: if the speaker says "period", "comma", \
+"new paragraph", "open quote", or "close quote", apply the punctuation and \
+remove the command word from the output.
+8. Preserve the original meaning exactly — do NOT add, remove, or reorder \
 ideas. Do NOT summarise or paraphrase.
-8. Output ONLY the cleaned text — no explanation, no preamble, no surrounding \
+9. Output ONLY the cleaned text — no explanation, no preamble, no surrounding \
 quotes.
 
 Examples:
@@ -56,9 +62,6 @@ Input: "yes it did not work but I'll try again I want to set all around for \
 Output: Yes, it did not work, but I'll try again. I want to set an alarm for \
 1 a.m., and then I'm going to do something else.\
 """
-
-# User-turn template — the raw transcription handed to the model.
-_USER_TEMPLATE = "Raw transcription:\n{text}"
 
 
 class TextCleaner:
@@ -123,6 +126,25 @@ class TextCleaner:
 
         return _rule_based_clean(text)
 
+    def _build_user_content(self, text: str) -> str:
+        """Build the user-turn message with optional context hints.
+
+        Injects today's date and any user-glossary proper nouns so the LLM
+        can resolve date-relative expressions and preserve specialised names
+        it might otherwise normalise away.
+        """
+        context_lines: list[str] = [
+            f"Date: {datetime.date.today().isoformat()}",
+        ]
+        if self.user_glossary:
+            names = ", ".join(sorted(self.user_glossary.values()))
+            context_lines.append(
+                f"Proper nouns to preserve (spell exactly as shown): {names}"
+            )
+
+        context_block = "Context:\n" + "\n".join(f"- {l}" for l in context_lines)
+        return f"{context_block}\n\nRaw transcription:\n{text}"
+
     # ------------------------------------------------------------------
     # Backend implementations
     # ------------------------------------------------------------------
@@ -133,8 +155,9 @@ class TextCleaner:
         payload = {
             "model": self.ollama_model,
             "system": _SYSTEM_PROMPT,
-            "prompt": _USER_TEMPLATE.format(text=text),
+            "prompt": self._build_user_content(text),
             "stream": False,
+            "options": {"temperature": 0.1},
         }
         data = json.dumps(payload).encode()
         req = urllib.request.Request(
@@ -157,9 +180,9 @@ class TextCleaner:
             "model": self.groq_model,
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _USER_TEMPLATE.format(text=text)},
+                {"role": "user", "content": self._build_user_content(text)},
             ],
-            "temperature": 0.3,
+            "temperature": 0.1,
             "max_tokens": 1024,
         }
         data = json.dumps(payload).encode()
