@@ -11,18 +11,54 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Prompt sent to the LLM
+# Prompts sent to the LLM
 # ---------------------------------------------------------------------------
 
-_CLEANUP_PROMPT = (
-    "Clean up the following transcribed speech. "
-    "Remove filler words (um, uh, like, you know, sort of, kind of, basically, "
-    "literally, actually when used as filler), fix grammar and punctuation, "
-    "remove false starts and repetitions, and make the text read as clearly typed "
-    "prose suitable for use as an AI prompt. Preserve the original meaning. "
-    "Return ONLY the cleaned text — no explanation, no preamble.\n\n"
-    "Transcription: {text}"
-)
+# System-level instructions — used as the ``system`` role for Groq and as the
+# ``system`` field for Ollama /api/generate.
+_SYSTEM_PROMPT = """\
+You are a speech-to-text post-processor. Convert raw, imperfect voice \
+transcriptions into clean, professional text ready to send in an email, \
+message, or chat — or for an AI agent to act on.
+
+Rules:
+1. Fix all grammar and spelling errors.
+2. Add proper punctuation: commas, periods, apostrophes, and correct \
+capitalisation for every sentence.
+3. Remove filler words: um, uh, like, you know, basically, literally (when \
+used as filler), sort of, kind of, I mean.
+4. Handle spoken self-corrections: when the speaker corrects themselves \
+("X sorry Y", "X sorry sorry Y", "X I mean Y", "X wait Y", "X no Y"), \
+discard the error (X) and the correction marker, and keep only the intended \
+correction (Y).
+5. Remove false starts and accidental word repetitions \
+(e.g. "For for tomorrow" → "for tomorrow").
+6. Fix context-obvious mishearings using surrounding words \
+(e.g. "set all around for 1 a.m." → "set an alarm for 1 a.m.").
+7. Preserve the original meaning exactly — do NOT add, remove, or reorder \
+ideas. Do NOT summarise or paraphrase.
+8. Output ONLY the cleaned text — no explanation, no preamble, no surrounding \
+quotes.
+
+Examples:
+
+Input: "uh hello my name is john and I want to um schedule a meeting for \
+monday I mean tuesday at 3 p.m"
+Output: Hello, my name is John, and I want to schedule a meeting for Tuesday \
+at 3 p.m.
+
+Input: "I want to say to the alarm for 12 a.m sorry sorry 1 a.m I'm be ready \
+For for tomorrow Yes."
+Output: I want to set an alarm for 1 a.m. so I'll be ready for tomorrow.
+
+Input: "yes it did not work but I'll try again I want to set all around for \
+12 a.m sorry sorry one a.m and then I'm gonna do something else"
+Output: Yes, it did not work, but I'll try again. I want to set an alarm for \
+1 a.m., and then I'm going to do something else.\
+"""
+
+# User-turn template — the raw transcription handed to the model.
+_USER_TEMPLATE = "Raw transcription:\n{text}"
 
 
 class TextCleaner:
@@ -33,6 +69,11 @@ class TextCleaner:
     * ``"ollama"`` — calls a local Ollama server; falls back to rule-based on error.
     * ``"groq"``   — calls the Groq API;  falls back to rule-based on error.
     * ``"none"``   — rule-based only (no network requests).
+
+    *user_glossary* maps STT-mangled strings to their correct form
+    (e.g. ``{"Jhunjhun": "Zinjad"}``).  Substitutions are applied
+    case-insensitively *before* the LLM call so the model never sees the
+    garbled version.
     """
 
     def __init__(
@@ -42,12 +83,14 @@ class TextCleaner:
         ollama_model: str = "llama3.2:3b",
         groq_api_key: str = "",
         groq_model: str = "llama-3.1-8b-instant",
+        user_glossary: dict[str, str] | None = None,
     ) -> None:
         self.backend = backend
         self.ollama_url = ollama_url.rstrip("/")
         self.ollama_model = ollama_model
         self.groq_api_key = groq_api_key
         self.groq_model = groq_model
+        self.user_glossary: dict[str, str] = user_glossary or {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -56,10 +99,13 @@ class TextCleaner:
     def clean(self, text: str) -> str:
         """Return a cleaned version of *text*.
 
-        Falls back to rule-based cleanup when the configured backend fails.
+        Applies the user glossary first, then calls the configured LLM
+        backend.  Falls back to rule-based cleanup when the backend fails.
         """
         if not text.strip():
             return text
+
+        text = _apply_glossary(text, self.user_glossary)
 
         if self.backend == "ollama":
             try:
@@ -86,7 +132,8 @@ class TextCleaner:
         url = f"{self.ollama_url}/api/generate"
         payload = {
             "model": self.ollama_model,
-            "prompt": _CLEANUP_PROMPT.format(text=text),
+            "system": _SYSTEM_PROMPT,
+            "prompt": _USER_TEMPLATE.format(text=text),
             "stream": False,
         }
         data = json.dumps(payload).encode()
@@ -109,7 +156,8 @@ class TextCleaner:
         payload = {
             "model": self.groq_model,
             "messages": [
-                {"role": "user", "content": _CLEANUP_PROMPT.format(text=text)},
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": _USER_TEMPLATE.format(text=text)},
             ],
             "temperature": 0.3,
             "max_tokens": 1024,
@@ -130,6 +178,23 @@ class TextCleaner:
 
 
 # ---------------------------------------------------------------------------
+# Glossary substitution
+# ---------------------------------------------------------------------------
+
+
+def _apply_glossary(text: str, glossary: dict[str, str]) -> str:
+    """Replace STT-mangled tokens with their correct forms.
+
+    Matching is whole-word and case-insensitive; replacement preserves
+    the casing supplied in *glossary*.
+    """
+    for wrong, right in glossary.items():
+        pattern = re.compile(r"\b" + re.escape(wrong) + r"\b", re.IGNORECASE)
+        text = pattern.sub(right, text)
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Rule-based fallback
 # ---------------------------------------------------------------------------
 
@@ -146,10 +211,19 @@ _FILLER_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+# Consecutive identical words: "For for" → "For", "the the" → "the".
+_REPEAT_WORD_RE = re.compile(r"\b(\w+)(\s+\1)+\b", re.IGNORECASE)
+
+# Spoken self-correction marker: "... sorry sorry" or lone trailing "sorry".
+# Removes the marker; the LLM handles the preceding erroneous word.
+_DOUBLE_SORRY_RE = re.compile(r"\bsorry\s+sorry\b", re.IGNORECASE)
+
 
 def _rule_based_clean(text: str) -> str:
     """Remove common speech fillers and tidy whitespace."""
     result = _FILLER_RE.sub("", text)
+    result = _DOUBLE_SORRY_RE.sub("", result)
+    result = _REPEAT_WORD_RE.sub(r"\1", result)
     # Collapse multiple spaces.
     result = re.sub(r"\s{2,}", " ", result)
     # Remove spaces before punctuation.

@@ -42,7 +42,7 @@ class RawSpeak:
             device=self.config.device,
         )
         self.transcriber = Transcriber(
-            model_name=self.config.whisper_model,
+            model_size=self.config.transcriber_model,
             language=self.config.language,
         )
         self.cleaner = TextCleaner(
@@ -51,6 +51,7 @@ class RawSpeak:
             ollama_model=self.config.ollama_model,
             groq_api_key=self.config.groq_api_key,
             groq_model=self.config.groq_model,
+            user_glossary=self.config.user_glossary,
         )
         self.paster = Paster()
         self.history = HistoryStore()
@@ -180,11 +181,11 @@ class RawSpeak:
         logger.info(
             "rawspeak ready  |  hotkey: %s  |  model: %s  |  cleanup: %s",
             self.config.hotkey,
-            self.config.whisper_model,
+            self.config.transcriber_model,
             self.config.cleanup_backend,
         )
         logger.info(
-            "(The Whisper model will be downloaded on first use if not cached.)"
+            "(Moonshine model will be downloaded on first use if not cached.)"
         )
 
         self._check_permissions()
