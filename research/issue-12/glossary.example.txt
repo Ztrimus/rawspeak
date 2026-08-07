@@ -1,0 +1,12 @@
+rawspeak
+Whisper
+faster-whisper
+DeepFilterNet
+Silero
+Ollama
+Groq
+HuggingFace
+PyInstaller
+Electron
+Saurabh
+Ztrimus

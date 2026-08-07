@@ -1,0 +1,4 @@
+results/
+samples/*.wav
+samples/*.aiff
+!samples/.gitkeep

@@ -1,0 +1,14 @@
+# Research-only dependencies for issue #12 dictation accuracy work.
+# Install with:  .venv/bin/pip install -r research/issue-12/requirements.txt
+# Kept separate from rawspeak runtime deps so the shipped binary stays small.
+
+jiwer>=3.0          # WER / CER metrics
+soundfile>=0.12     # WAV read/write for samples
+faster-whisper>=1.0 # CTranslate2 backend with hotwords + initial_prompt support
+
+# Optional, loaded lazily by bench.py only when the relevant flag is used:
+#   silero-vad   for --vad silero-trim          (Experiment 2)
+#   deepfilternet for --enhance deepfilternet   (Experiment 5)
+# Install on demand:
+#   pip install silero-vad
+#   pip install deepfilternet

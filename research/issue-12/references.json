@@ -1,0 +1,47 @@
+{
+  "_schema": {
+    "id": "stable id; matches samples/<id>.wav",
+    "audio": "filename under samples/, optional (defaults to <id>.wav)",
+    "tags": "list of failure-mode tags: clean, slow, fillers, lists, jargon, noisy-bg, silence",
+    "ground_truth": "what the speaker actually said, verbatim (no punctuation polish)",
+    "ideal": "the cleaned form you'd want pasted into an AI prompt"
+  },
+  "samples": [
+    {
+      "id": "syn_clean_short",
+      "tags": ["clean"],
+      "ground_truth": "Set up a meeting with the team tomorrow at three p m to review the launch plan.",
+      "ideal": "Set up a meeting with the team tomorrow at 3pm to review the launch plan."
+    },
+    {
+      "id": "syn_fillers",
+      "tags": ["fillers", "false-starts"],
+      "ground_truth": "Um so basically I think we should you know like ship the feature behind a flag and uh see what happens.",
+      "ideal": "I think we should ship the feature behind a flag and see what happens."
+    },
+    {
+      "id": "syn_list",
+      "tags": ["lists"],
+      "ground_truth": "First clone the repo. Second install the dependencies. Third run the tests. Fourth open a pull request.",
+      "ideal": "1. Clone the repo.\n2. Install the dependencies.\n3. Run the tests.\n4. Open a pull request."
+    },
+    {
+      "id": "syn_jargon",
+      "tags": ["jargon"],
+      "ground_truth": "Use faster whisper with the distil large v three model and pass the hotwords list for proper nouns.",
+      "ideal": "Use faster-whisper with the distil-large-v3 model and pass the hotwords list for proper nouns."
+    },
+    {
+      "id": "syn_long_pause",
+      "tags": ["silence"],
+      "ground_truth": "Open the report. Now move to the cost section. Highlight the deployment cost.",
+      "ideal": "Open the report. Now move to the cost section. Highlight the deployment cost."
+    },
+    {
+      "id": "syn_false_starts",
+      "tags": ["false-starts"],
+      "ground_truth": "I was thinking we should we should actually move the the meeting to friday instead of thursday.",
+      "ideal": "I was thinking we should actually move the meeting to Friday instead of Thursday."
+    }
+  ]
+}
